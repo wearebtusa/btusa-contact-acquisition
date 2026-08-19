@@ -1,6 +1,6 @@
 # BTUSA Contact Acquisition
 
-BTUSA Contact Acquisition connects a Better Together USA Fluent Form to FluentCRM without treating a contact-only submission as marketing consent.
+BTUSA Contact Acquisition connects the Better Together USA contact and membership forms to FluentCRM without treating an operational submission as marketing consent.
 
 ## Ownership
 
@@ -27,6 +27,7 @@ Do not enable a second FluentCRM integration feed on the same form. This plugin 
 The plugin reads these WordPress options:
 
 - `btusa_contact_acquisition_form_id`: production Fluent Form ID.
+- `btusa_membership_application_form_id`: Fluent Forms Pro membership application ID. Use the same ID in LAPDI Member Portal's workflow settings.
 - `btusa_contact_acquisition_test_mode`: `yes` restricts the welcome trigger tag to approved test emails; `no` enables it for all explicit opt-ins.
 - `btusa_contact_acquisition_test_emails`: array of approved test email addresses.
 
@@ -34,6 +35,7 @@ Example WP-CLI configuration:
 
 ```sh
 wp option update btusa_contact_acquisition_form_id 123
+wp option update btusa_membership_application_form_id 456
 wp option update btusa_contact_acquisition_test_mode yes
 wp option update btusa_contact_acquisition_test_emails '["approved@example.org"]' --format=json
 ```
@@ -50,6 +52,17 @@ Activation creates or reuses the required interest tags, the `Consent: BTUSA Upd
 - Interest tags are additive so a later inquiry does not destroy prior intent history.
 - `Consent: BTUSA Updates` is attached only for an eligible explicit opt-in. FluentCRM's duplicate-safe tag attachment prevents repeated welcome enrollment.
 
+## Membership behavior
+
+- Publish `[btusa_membership_application]` on the Join page. The shortcode resolves the configured form ID, so page content does not contain an environment-specific ID.
+- A submitted application creates or updates a CRM contact only when `updates_consent` explicitly contains `yes`. Operational application email is not marketing consent.
+- An application without marketing consent remains solely in Fluent Forms and Member Portal until a decision is made.
+- On the `lapdi_member_application_approved` event, the plugin creates or updates a minimal FluentCRM contact, attaches `Member`, removes only `Prospect`, and preserves all other lists and tags.
+- The eight reflective answers, reviewer identities, rationales, recommendations, and workflow audit are never copied to FluentCRM.
+- Existing suppressed CRM statuses are never revived. A new approved member without marketing consent is `transactional`; an eligible explicit opt-in may be `subscribed`.
+
+The membership application requires Fluent Forms Pro for four steps and save/resume. LAPDI Member Portal—not Fluent Forms User Registration or Admin Approval—remains the approval and account-access authority.
+
 ## Required form keys
 
 - `first_name`
@@ -59,6 +72,8 @@ Activation creates or reuses the required interest tags, the `Consent: BTUSA Upd
 - `contact_interest`
 - `message`
 - `updates_consent` with checked value `yes`
+
+The membership form additionally uses the keys documented in the website repository's membership application deployment guide. Its name and email keys must remain `first_name`, `last_name`, and `email`; its independent marketing checkbox must remain `updates_consent` with checked value `yes`.
 
 Supported `contact_interest` values:
 

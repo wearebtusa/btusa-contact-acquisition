@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       BTUSA Contact Acquisition
  * Plugin URI:        https://github.com/wearebtusa/btusa-contact-acquisition
- * Description:       Connects a Better Together USA Fluent Form to FluentCRM with consent-safe lifecycle and interest routing.
- * Version:           1.0.0
+ * Description:       Connects Better Together USA contact and membership forms to FluentCRM with consent-safe lifecycle and interest routing.
+ * Version:           1.1.0
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Requires Plugins:  fluentform, fluent-crm
@@ -18,6 +18,8 @@ defined( 'ABSPATH' ) || exit;
 
 final class BTUSA_Contact_Acquisition {
 	private const FORM_ID_OPTION = 'btusa_contact_acquisition_form_id';
+
+	private const MEMBERSHIP_FORM_ID_OPTION = 'btusa_membership_application_form_id';
 
 	private const TEST_MODE_OPTION = 'btusa_contact_acquisition_test_mode';
 
@@ -58,6 +60,8 @@ final class BTUSA_Contact_Acquisition {
 
 	public static function init(): void {
 		add_action( 'fluentform/submission_inserted', array( __CLASS__, 'process_submission' ), 20, 3 );
+		add_action( 'lapdi_member_application_approved', array( __CLASS__, 'process_membership_approval' ), 10, 3 );
+		add_shortcode( 'btusa_membership_application', array( __CLASS__, 'membership_form_shortcode' ) );
 	}
 
 	public static function activate(): void {
@@ -80,6 +84,16 @@ final class BTUSA_Contact_Acquisition {
 	 * @param object              $form Fluent Forms form model.
 	 */
 	public static function process_submission( $insert_id, $form_data, $form ): void {
+		$membership_form_id = (int) apply_filters(
+			'btusa_membership_application_form_id',
+			get_option( self::MEMBERSHIP_FORM_ID_OPTION, 0 )
+		);
+
+		if ( $membership_form_id && (int) $form->id === $membership_form_id ) {
+			self::process_membership_submission( (int) $insert_id, (array) $form_data );
+			return;
+		}
+
 		$form_id = (int) apply_filters(
 			'btusa_contact_acquisition_form_id',
 			self::option_value( self::FORM_ID_OPTION, self::LEGACY_FORM_ID_OPTION, 0 )
@@ -123,6 +137,126 @@ final class BTUSA_Contact_Acquisition {
 			// Do not log contact data. The Fluent Forms entry remains the recoverable source record.
 			error_log( 'BTUSA Contact Acquisition failed for Fluent Forms entry ' . absint( $insert_id ) . '.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 		}
+	}
+
+	/**
+	 * Renders the configured Fluent Forms Pro application without exposing an
+	 * environment-specific form ID in page content.
+	 */
+	public static function membership_form_shortcode(): string {
+		$form_id = (int) apply_filters(
+			'btusa_membership_application_form_id',
+			get_option( self::MEMBERSHIP_FORM_ID_OPTION, 0 )
+		);
+		if ( ! $form_id || ! shortcode_exists( 'fluentform' ) ) {
+			return current_user_can( 'manage_options' )
+				? '<p>' . esc_html__( 'Configure the BTUSA membership application form ID before publishing this page.', 'btusa-contact-acquisition' ) . '</p>'
+				: '<p>' . esc_html__( 'Membership applications are temporarily unavailable.', 'btusa-contact-acquisition' ) . '</p>';
+		}
+
+		return do_shortcode( '[fluentform id="' . $form_id . '"]' );
+	}
+
+	/**
+	 * Adds a membership prospect to CRM only when general marketing consent was
+	 * explicitly given. Operational application email does not imply consent.
+	 *
+	 * @param int                 $entry_id Fluent Forms entry ID.
+	 * @param array<string,mixed> $form_data Submitted application values.
+	 */
+	private static function process_membership_submission( int $entry_id, array $form_data ): void {
+		if ( ! function_exists( 'FluentCrmApi' ) || ! self::has_marketing_consent( $form_data ) ) {
+			return;
+		}
+		$email = sanitize_email( self::field_value( $form_data, 'email' ) );
+		if ( ! is_email( $email ) ) {
+			return;
+		}
+		try {
+			$contacts = FluentCrmApi( 'contacts' );
+			$existing = $contacts->getContact( $email );
+			$data     = self::membership_contact_data( $form_data, $email, true, $existing, $entry_id );
+			$contact  = $contacts->createOrUpdate( $data, false, false );
+			if ( ! $contact ) {
+				return;
+			}
+			self::apply_lifecycle( $contact );
+			self::apply_tag( $contact, self::INTEREST_TAGS['membership'] );
+			if ( 'subscribed' === $contact->status && self::welcome_is_allowed( $email ) ) {
+				self::apply_tag( $contact, self::WELCOME_TAG_TITLE );
+			}
+			do_action( 'btusa_membership_interest_processed', $contact, $entry_id );
+		} catch ( Throwable $throwable ) {
+			error_log( 'BTUSA Contact Acquisition failed for membership entry ' . absint( $entry_id ) . '.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
+	}
+
+	/**
+	 * Converts an approved applicant to Member without copying application or
+	 * reviewer answers into FluentCRM.
+	 *
+	 * @param int                 $application_id Member Portal application ID.
+	 * @param array<string,mixed> $form_data Fluent Forms entry values.
+	 * @param int                 $user_id Approved WordPress user ID.
+	 */
+	public static function process_membership_approval( $application_id, $form_data, $user_id ): void {
+		if ( ! function_exists( 'FluentCrmApi' ) ) {
+			return;
+		}
+		$form_data = (array) $form_data;
+		$email     = sanitize_email( self::field_value( $form_data, 'email' ) );
+		if ( ! is_email( $email ) ) {
+			return;
+		}
+		try {
+			$contacts = FluentCrmApi( 'contacts' );
+			$existing = $contacts->getContact( $email );
+			$consent  = self::has_marketing_consent( $form_data );
+			$contact  = $contacts->createOrUpdate( self::membership_contact_data( $form_data, $email, $consent, $existing, 0 ), false, false );
+			if ( ! $contact ) {
+				return;
+			}
+			self::apply_member_lifecycle( $contact );
+			self::apply_tag( $contact, self::INTEREST_TAGS['membership'] );
+			do_action( 'btusa_membership_contact_approved', $contact, absint( $application_id ), absint( $user_id ) );
+		} catch ( Throwable $throwable ) {
+			error_log( 'BTUSA Contact Acquisition failed for approved membership application ' . absint( $application_id ) . '.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
+	}
+
+	/** Builds a minimal membership CRM payload. */
+	private static function membership_contact_data( array $form_data, string $email, bool $consent, $existing, int $entry_id ): array {
+		$data = array(
+			'email'         => $email,
+			'custom_values' => array(
+				'btusa_contact_interest' => 'membership',
+			),
+		);
+		$first_name = sanitize_text_field( self::field_value( $form_data, 'first_name' ) );
+		$last_name  = sanitize_text_field( self::field_value( $form_data, 'last_name' ) );
+		if ( '' !== $first_name ) {
+			$data['first_name'] = $first_name;
+		}
+		if ( '' !== $last_name ) {
+			$data['last_name'] = $last_name;
+		}
+		if ( ! $existing ) {
+			$data['source'] = 'Fluent Forms: BTUSA Membership Application';
+			$data['status'] = $consent ? 'subscribed' : 'transactional';
+		} elseif ( $consent && in_array( $existing->status, array( 'pending', 'transactional' ), true ) ) {
+			$data['status'] = 'subscribed';
+		}
+		if ( $consent ) {
+			$data['custom_values']['btusa_updates_consent']        = 'yes';
+			$data['custom_values']['btusa_updates_consent_at']     = current_time( 'mysql' );
+			$data['custom_values']['btusa_updates_consent_source'] = 'Better Together USA membership application';
+		}
+		if ( $entry_id ) {
+			$data['custom_values']['btusa_contact_entry_id']   = (string) $entry_id;
+			$data['custom_values']['btusa_contact_entry_date'] = current_time( 'mysql' );
+		}
+
+		return $data;
 	}
 
 	/**
@@ -197,6 +331,18 @@ final class BTUSA_Contact_Acquisition {
 		$prospect = \FluentCrm\App\Models\Lists::where( 'title', self::PROSPECT_LIST_TITLE )->first();
 		if ( $prospect ) {
 			$contact->attachLists( array( (int) $prospect->id ) );
+		}
+	}
+
+	/** Attaches Member, removes only Prospect, and preserves every other list. */
+	private static function apply_member_lifecycle( $contact ): void {
+		$member = \FluentCrm\App\Models\Lists::where( 'title', 'Member' )->first();
+		if ( $member ) {
+			$contact->attachLists( array( (int) $member->id ) );
+		}
+		$prospect = \FluentCrm\App\Models\Lists::where( 'title', self::PROSPECT_LIST_TITLE )->first();
+		if ( $prospect ) {
+			$contact->detachLists( array( (int) $prospect->id ) );
 		}
 	}
 

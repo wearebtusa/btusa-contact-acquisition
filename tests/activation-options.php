@@ -15,6 +15,8 @@ $btusa_test_options = array(
 
 function add_action( ...$arguments ): void {}
 
+function add_shortcode( ...$arguments ): void {}
+
 function register_activation_hook( ...$arguments ): void {}
 
 function get_option( string $name, $default = false ) {
