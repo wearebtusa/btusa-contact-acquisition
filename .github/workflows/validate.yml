@@ -1,0 +1,34 @@
+name: Validate plugin
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.1', '8.3']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      - name: Check PHP syntax
+        run: php -l btusa-contact-acquisition.php
+
+      - name: Test activation option migration
+        run: php tests/activation-options.php
+
+      - name: Build installable archive
+        run: ./scripts/package-plugin.sh
