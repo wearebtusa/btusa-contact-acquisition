@@ -4,11 +4,11 @@ Tags: fluent-forms, fluentcrm, crm, consent, email-marketing
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.1.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Connects Better Together USA contact and membership forms to FluentCRM with consent-safe lifecycle and interest routing.
+Connects Better Together USA contact, newsletter and membership forms to FluentCRM with consent-safe lifecycle routing and restricted portal-user classification.
 
 == Description ==
 
@@ -31,6 +31,17 @@ Fluent Forms and FluentCRM are required.
 Replaces LAPDI Contact Acquisition. Existing LAPDI configuration options are copied to BTUSA option names on activation when needed.
 
 == Changelog ==
+
+= 1.2.1 =
+* Redesign CRM Classifications with a clearer two-step workflow, compact status badges and responsive controls.
+* Add select-all behavior and a live selected-user count for safer bulk changes.
+* Move owner protection settings into a focused collapsible panel.
+
+= 1.2.0 =
+* Add restricted individual and bulk FluentCRM tag/list classification for LAPDI Member Portal users.
+* Protect the consent trigger and Prospect-to-Member lifecycle from manual changes.
+* Synchronize confirmed newsletter signups to FluentCRM while preserving suppression safeguards.
+* Add stable WordPress-user to FluentCRM-contact mapping and integration hooks.
 
 = 1.1.0 =
 * Add a dedicated Fluent Forms Pro membership application integration and stable Join-page shortcode.

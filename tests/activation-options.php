@@ -13,6 +13,20 @@ $btusa_test_options = array(
 	'lapdi_contact_acquisition_test_emails' => array( 'test@example.org' ),
 );
 
+class WP_Role {
+	public array $capabilities = array();
+
+	public function add_cap( string $capability ): void {
+		$this->capabilities[ $capability ] = true;
+	}
+
+	public function has_cap( string $capability ): bool {
+		return ! empty( $this->capabilities[ $capability ] );
+	}
+}
+
+$btusa_test_administrator = new WP_Role();
+
 function add_action( ...$arguments ): void {}
 
 function add_shortcode( ...$arguments ): void {}
@@ -35,6 +49,17 @@ function add_option( string $name, $value, ...$arguments ): bool {
 	$btusa_test_options[ $name ] = $value;
 
 	return true;
+}
+
+function update_option( string $name, $value, ...$arguments ): bool {
+	global $btusa_test_options;
+	$btusa_test_options[ $name ] = $value;
+	return true;
+}
+
+function get_role( string $role ) {
+	global $btusa_test_administrator;
+	return 'administrator' === $role ? $btusa_test_administrator : null;
 }
 
 require dirname( __DIR__ ) . '/btusa-contact-acquisition.php';
@@ -68,6 +93,11 @@ if ( 99 !== get_option( 'btusa_contact_acquisition_form_id' ) ) {
 
 if ( 'yes' !== get_option( 'btusa_contact_acquisition_test_mode' ) ) {
 	fwrite( STDERR, "Activation did not enable safe test mode by default.\n" );
+	exit( 1 );
+}
+
+if ( empty( $btusa_test_administrator->capabilities['manage_btusa_contact_classifications'] ) ) {
+	fwrite( STDERR, "Activation did not grant the classification capability to Administrator.\n" );
 	exit( 1 );
 }
 

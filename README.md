@@ -1,12 +1,13 @@
 # BTUSA Contact Acquisition
 
-BTUSA Contact Acquisition connects the Better Together USA contact and membership forms to FluentCRM without treating an operational submission as marketing consent.
+BTUSA Contact Acquisition connects the Better Together USA contact, newsletter and membership forms to FluentCRM without treating an operational submission as marketing consent. It also provides restricted tag and list classification for LAPDI Member Portal users.
 
 ## Ownership
 
 - Fluent Forms owns field validation and stored form entries.
-- This plugin owns consent-safe FluentCRM contact updates, lifecycle preservation, interest routing and the welcome-trigger tag.
+- This plugin owns consent-safe FluentCRM contact updates, lifecycle preservation, interest routing, the welcome-trigger tag and restricted member classification.
 - FluentCRM owns lists, tags, contact records, the `BTUSA Welcome` automation and its email.
+- FluentCRM owns newsletter delivery and unsubscribe status. Mailchimp is a non-sending storage copy populated by the existing Fluent Forms feed.
 - FluentSMTP and the configured transactional email provider own authenticated delivery.
 
 ## Requirements
@@ -15,6 +16,7 @@ BTUSA Contact Acquisition connects the Better Together USA contact and membershi
 - PHP 8.1 or later
 - Fluent Forms
 - FluentCRM
+- LAPDI Member Portal for member classification (contact acquisition continues without it)
 
 ## Installation
 
@@ -28,6 +30,7 @@ The plugin reads these WordPress options:
 
 - `btusa_contact_acquisition_form_id`: production Fluent Form ID.
 - `btusa_membership_application_form_id`: Fluent Forms Pro membership application ID. Use the same ID in LAPDI Member Portal's workflow settings.
+- `btusa_newsletter_form_id`: Fluent Forms Pro newsletter signup form ID. The form must use `first_name`, `email` and required `marketing_consent=yes`, with Fluent Forms global and form-level double opt-in enabled.
 - `btusa_contact_acquisition_test_mode`: `yes` restricts the welcome trigger tag to approved test emails; `no` enables it for all explicit opt-ins.
 - `btusa_contact_acquisition_test_emails`: array of approved test email addresses.
 
@@ -36,11 +39,20 @@ Example WP-CLI configuration:
 ```sh
 wp option update btusa_contact_acquisition_form_id 123
 wp option update btusa_membership_application_form_id 456
+wp option update btusa_newsletter_form_id 5
 wp option update btusa_contact_acquisition_test_mode yes
 wp option update btusa_contact_acquisition_test_emails '["approved@example.org"]' --format=json
 ```
 
 Activation creates or reuses the required interest tags, the `Consent: BTUSA Updates` automation trigger tag, the `Test Contact` tag and BTUSA-prefixed contact custom fields. It does not delete or replace existing FluentCRM resources.
+
+## Newsletter behavior
+
+- The configured newsletter form is synchronized only after Fluent Forms double opt-in and explicit `marketing_consent=yes`.
+- New newsletter contacts are `subscribed`, receive `Prospect` when no recognized lifecycle list exists and receive `Consent: BTUSA Updates` when the welcome trigger is allowed.
+- A fresh confirmed newsletter opt-in may restore an ordinary `unsubscribed` contact. It never revives `bounced` or `complained` contacts.
+- Existing lifecycle classifications and suppression state are otherwise preserved.
+- Mailchimp may retain the existing form-feed copy, but it is not a sending or unsubscribe authority.
 
 ## Contact behavior
 
@@ -60,6 +72,20 @@ Activation creates or reuses the required interest tags, the `Consent: BTUSA Upd
 - On the `lapdi_member_application_approved` event, the plugin creates or updates a minimal FluentCRM contact, attaches `Member`, removes only `Prospect`, and preserves all other lists and tags.
 - The eight reflective answers, reviewer identities, rationales, recommendations, and workflow audit are never copied to FluentCRM.
 - Existing suppressed CRM statuses are never revived. A new approved member without marketing consent is `transactional`; an eligible explicit opt-in may be `subscribed`.
+- The approved WordPress user stores the corresponding FluentCRM contact ID for stable classification after an email change.
+
+## Member CRM classification
+
+The plugin adds **Users → CRM Classifications** for accounts with the `manage_btusa_contact_classifications` capability. WordPress Administrators receive that capability automatically. Assign it to the appropriate chapter-administrator portal role through LAPDI Member Portal's existing per-role capability settings.
+
+- Only users assigned to a configured Member Portal role are displayed.
+- An existing FluentCRM contact is required; the screen never creates one.
+- Administrators may add or remove existing, permitted tags and lists for one user or up to 100 selected users.
+- `Consent: BTUSA Updates`, `Prospect` and `Member` are always protected. Owners may protect additional classifications on the same screen.
+- The interface does not grant FluentCRM manager permissions or expose contact editing, deletion, export, email, campaign or automation controls.
+- Successful changes fire `btusa_contact_classification_changed`; completed operations fire `btusa_contact_classification_batch_completed`. The plugin retains no classification audit log.
+
+The screen uses a two-step workflow: select one or more portal users, then choose an add/remove operation and the permitted classifications. Owner-only protection settings remain collapsed until needed.
 
 The membership application requires Fluent Forms Pro for four steps and save/resume. LAPDI Member Portal—not Fluent Forms User Registration or Admin Approval—remains the approval and account-access authority.
 
@@ -101,6 +127,7 @@ After changing delivery configuration:
 4. For an explicit opt-in, confirm the consent tag, one automation subscriber and one campaign email record.
 5. For a non-opt-in, confirm there is no consent tag, automation subscriber or marketing email.
 6. Inspect the FluentSMTP log and verify delivery at the approved test inbox.
+7. Confirm an authorized portal manager can classify portal users but cannot change Consent, Prospect or Member and cannot open FluentCRM administration.
 
 ## License
 

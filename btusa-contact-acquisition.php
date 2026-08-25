@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       BTUSA Contact Acquisition
  * Plugin URI:        https://github.com/wearebtusa/btusa-contact-acquisition
- * Description:       Connects Better Together USA contact and membership forms to FluentCRM with consent-safe lifecycle and interest routing.
- * Version:           1.1.0
+ * Description:       Connects Better Together USA forms and portal users to FluentCRM with consent-safe lifecycle and restricted classification.
+ * Version:           1.2.1
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Requires Plugins:  fluentform, fluent-crm
@@ -17,6 +17,14 @@
 defined( 'ABSPATH' ) || exit;
 
 final class BTUSA_Contact_Acquisition {
+	public const VERSION = '1.2.1';
+
+	public const VERSION_OPTION = 'btusa_contact_acquisition_version';
+
+	public const CLASSIFICATION_CAPABILITY = 'manage_btusa_contact_classifications';
+
+	public const CRM_CONTACT_USER_META = '_btusa_fluentcrm_contact_id';
+
 	private const FORM_ID_OPTION = 'btusa_contact_acquisition_form_id';
 
 	private const MEMBERSHIP_FORM_ID_OPTION = 'btusa_membership_application_form_id';
@@ -61,11 +69,15 @@ final class BTUSA_Contact_Acquisition {
 	public static function init(): void {
 		add_action( 'fluentform/submission_inserted', array( __CLASS__, 'process_submission' ), 20, 3 );
 		add_action( 'lapdi_member_application_approved', array( __CLASS__, 'process_membership_approval' ), 10, 3 );
+		add_action( 'admin_init', array( __CLASS__, 'maybe_upgrade' ), 1 );
 		add_shortcode( 'btusa_membership_application', array( __CLASS__, 'membership_form_shortcode' ) );
+
+		BTUSA_Contact_Classification_Admin::init();
 	}
 
 	public static function activate(): void {
 		self::migrate_legacy_options();
+		self::install_capabilities();
 
 		if ( false === get_option( self::TEST_MODE_OPTION, false ) ) {
 			add_option( self::TEST_MODE_OPTION, 'yes', '', false );
@@ -74,6 +86,19 @@ final class BTUSA_Contact_Acquisition {
 		if ( function_exists( 'FluentCrmApi' ) ) {
 			self::ensure_crm_resources();
 		}
+
+		update_option( self::VERSION_OPTION, self::VERSION, false );
+	}
+
+	/** Applies one-time upgrade behavior after replacing an existing plugin ZIP. */
+	public static function maybe_upgrade(): void {
+		self::install_capabilities();
+
+		if ( self::VERSION === (string) get_option( self::VERSION_OPTION, '' ) ) {
+			return;
+		}
+
+		update_option( self::VERSION_OPTION, self::VERSION, false );
 	}
 
 	/**
@@ -91,6 +116,16 @@ final class BTUSA_Contact_Acquisition {
 
 		if ( $membership_form_id && (int) $form->id === $membership_form_id ) {
 			self::process_membership_submission( (int) $insert_id, (array) $form_data );
+			return;
+		}
+
+		$newsletter_form_id = (int) apply_filters(
+			'btusa_newsletter_form_id',
+			get_option( 'btusa_newsletter_form_id', 0 )
+		);
+
+		if ( $newsletter_form_id && (int) $form->id === $newsletter_form_id ) {
+			self::process_newsletter_submission( (int) $insert_id, (array) $form_data, $newsletter_form_id );
 			return;
 		}
 
@@ -216,11 +251,78 @@ final class BTUSA_Contact_Acquisition {
 			if ( ! $contact ) {
 				return;
 			}
+			if ( absint( $user_id ) && ! empty( $contact->id ) ) {
+				update_user_meta( absint( $user_id ), self::CRM_CONTACT_USER_META, (int) $contact->id );
+			}
 			self::apply_member_lifecycle( $contact );
 			self::apply_tag( $contact, self::INTEREST_TAGS['membership'] );
 			do_action( 'btusa_membership_contact_approved', $contact, absint( $application_id ), absint( $user_id ) );
 		} catch ( Throwable $throwable ) {
 			error_log( 'BTUSA Contact Acquisition failed for approved membership application ' . absint( $application_id ) . '.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
+	}
+
+	/**
+	 * Synchronizes a confirmed newsletter signup to FluentCRM.
+	 *
+	 * Fluent Forms fires submission actions only after confirmation when double
+	 * opt-in is active. The explicit settings check keeps this integration closed
+	 * if that protection is disabled later.
+	 */
+	private static function process_newsletter_submission( int $entry_id, array $form_data, int $form_id ): void {
+		if (
+			! function_exists( 'FluentCrmApi' )
+			|| ! self::newsletter_double_optin_enabled( $form_id )
+			|| ! self::has_newsletter_consent( $form_data )
+		) {
+			return;
+		}
+
+		$email = sanitize_email( self::field_value( $form_data, 'email' ) );
+		if ( ! is_email( $email ) ) {
+			return;
+		}
+
+		try {
+			$contacts = FluentCrmApi( 'contacts' );
+			$existing = $contacts->getContact( $email );
+			$data     = array(
+				'email'         => $email,
+				'custom_values' => array(
+					'btusa_updates_consent'        => 'yes',
+					'btusa_updates_consent_at'     => current_time( 'mysql' ),
+					'btusa_updates_consent_source' => 'Better Together USA newsletter signup',
+				),
+			);
+
+			$first_name = sanitize_text_field( self::field_value( $form_data, 'first_name' ) );
+			if ( '' !== $first_name ) {
+				$data['first_name'] = $first_name;
+			}
+
+			if ( ! $existing ) {
+				$data['source'] = 'Fluent Forms: BTUSA Newsletter Signup';
+				$data['status'] = 'subscribed';
+			} elseif ( in_array( $existing->status, array( 'pending', 'transactional', 'unsubscribed' ), true ) ) {
+				$data['status'] = 'subscribed';
+			}
+
+			$contact = $contacts->createOrUpdate( $data, false, false );
+			if ( ! $contact ) {
+				return;
+			}
+
+			self::apply_lifecycle( $contact );
+			if ( self::is_test_email( $email ) ) {
+				self::apply_tag( $contact, self::TEST_TAG_TITLE );
+			}
+			if ( 'subscribed' === $contact->status && self::welcome_is_allowed( $email ) ) {
+				self::apply_tag( $contact, self::WELCOME_TAG_TITLE );
+			}
+
+			do_action( 'btusa_newsletter_contact_processed', $contact, $entry_id );
+		} catch ( Throwable $throwable ) {
+			error_log( 'BTUSA Contact Acquisition failed for newsletter entry ' . absint( $entry_id ) . '.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 		}
 	}
 
@@ -464,6 +566,33 @@ final class BTUSA_Contact_Acquisition {
 		return in_array( 'yes', $value, true );
 	}
 
+	/** Returns whether the dedicated newsletter checkbox was explicitly checked. */
+	private static function has_newsletter_consent( array $form_data ): bool {
+		$value = array_map( 'sanitize_key', (array) ( $form_data['marketing_consent'] ?? array() ) );
+
+		return in_array( 'yes', $value, true );
+	}
+
+	/** Returns whether both global and form-level Fluent Forms double opt-in are active. */
+	private static function newsletter_double_optin_enabled( int $form_id ): bool {
+		if ( ! class_exists( '\\FluentForm\\App\\Helpers\\Helper' ) ) {
+			return false;
+		}
+
+		$global = (array) get_option( '_fluentform_double_optin_settings', array() );
+		$form   = (array) \FluentForm\App\Helpers\Helper::getFormMeta( $form_id, 'double_optin_settings', array() );
+
+		return 'yes' === ( $global['enabled'] ?? 'no' ) && 'yes' === ( $form['status'] ?? 'no' );
+	}
+
+	/** Grants the plugin capability only to the WordPress owner role by default. */
+	private static function install_capabilities(): void {
+		$administrator = get_role( 'administrator' );
+		if ( $administrator instanceof WP_Role && ! $administrator->has_cap( self::CLASSIFICATION_CAPABILITY ) ) {
+			$administrator->add_cap( self::CLASSIFICATION_CAPABILITY );
+		}
+	}
+
 	private static function is_test_email( string $email ): bool {
 		$emails = array_map(
 			'sanitize_email',
@@ -479,6 +608,8 @@ final class BTUSA_Contact_Acquisition {
 		return ! $test_mode || self::is_test_email( $email );
 	}
 }
+
+require_once __DIR__ . '/includes/class-btusa-contact-classification-admin.php';
 
 register_activation_hook( __FILE__, array( 'BTUSA_Contact_Acquisition', 'activate' ) );
 BTUSA_Contact_Acquisition::init();

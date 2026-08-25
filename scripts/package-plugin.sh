@@ -37,6 +37,9 @@ trap cleanup EXIT
 
 mkdir -p "${staging_dir}"
 cp "${plugin_file}" "${repo_root}/README.md" "${repo_root}/readme.txt" "${repo_root}/LICENSE" "${staging_dir}/"
+cp "${repo_root}/uninstall.php" "${staging_dir}/"
+cp -R "${repo_root}/includes" "${staging_dir}/"
+cp -R "${repo_root}/assets" "${staging_dir}/"
 
 (
 	cd "${temporary_dir}"
@@ -47,6 +50,10 @@ unzip -tq "${archive_path}"
 
 for required_path in \
 	"${plugin_slug}/${plugin_slug}.php" \
+	"${plugin_slug}/includes/class-btusa-contact-classification-admin.php" \
+	"${plugin_slug}/assets/admin-classifications.css" \
+	"${plugin_slug}/assets/admin-classifications.js" \
+	"${plugin_slug}/uninstall.php" \
 	"${plugin_slug}/readme.txt"; do
 	if ! unzip -Z1 "${archive_path}" | grep -Fx "${required_path}" >/dev/null; then
 		echo "Archive is missing required file: ${required_path}" >&2
