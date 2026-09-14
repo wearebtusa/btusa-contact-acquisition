@@ -1,6 +1,10 @@
 # BTUSA Contact Acquisition
 
-BTUSA Contact Acquisition connects the Better Together USA contact, newsletter and membership forms to FluentCRM without treating an operational submission as marketing consent. It also provides restricted tag and list classification for LAPDI Member Portal users.
+BTUSA Contact Acquisition connects the Better Together USA national contact,
+newsletter and membership forms to FluentCRM without treating an operational
+submission as marketing consent. It also provides restricted tag and list
+classification for LAPDI Member Portal users. Install it on national only;
+chapter sites link to national forms and do not run a local Fluent stack.
 
 ## Ownership
 
@@ -30,7 +34,7 @@ The plugin reads these WordPress options:
 
 - `btusa_contact_acquisition_form_id`: production Fluent Form ID.
 - `btusa_membership_application_form_id`: Fluent Forms Pro membership application ID. Use the same ID in LAPDI Member Portal's workflow settings.
-- `btusa_newsletter_form_id`: Fluent Forms Pro newsletter signup form ID. The form must use `first_name`, `email` and required `marketing_consent=yes`, with Fluent Forms global and form-level double opt-in enabled.
+- `btusa_newsletter_form_id`: Fluent Forms Pro newsletter signup form ID. The form must use `first_name`, `email`, the optional visible `chapter_code` state/DC dropdown and required `marketing_consent=yes`, with Fluent Forms global and form-level double opt-in enabled.
 - `btusa_contact_acquisition_test_mode`: `yes` restricts the welcome trigger tag to approved test emails; `no` enables it for all explicit opt-ins.
 - `btusa_contact_acquisition_test_emails`: array of approved test email addresses.
 
@@ -52,6 +56,10 @@ Activation creates or reuses the required interest tags, the `Consent: BTUSA Upd
 - New newsletter contacts are `subscribed`, receive `Prospect` when no recognized lifecycle list exists and receive `Consent: BTUSA Updates` when the welcome trigger is allowed.
 - A fresh confirmed newsletter opt-in may restore an ordinary `unsubscribed` contact. It never revives `bounced` or `complained` contacts.
 - Existing lifecycle classifications and suppression state are otherwise preserved.
+- A valid optional `chapter_code` is stored in the `btusa_chapter_interest`
+  custom field. It represents requested news context only, creates no dynamic
+  tag and grants no chapter role or access. A blank referral does not erase a
+  previously stored value.
 - Mailchimp may retain the existing form-feed copy, but it is not a sending or unsubscribe authority.
 
 ## Contact behavior
@@ -76,7 +84,7 @@ Activation creates or reuses the required interest tags, the `Consent: BTUSA Upd
 
 ## Member CRM classification
 
-The plugin adds **Users → CRM Classifications** for accounts with the `manage_btusa_contact_classifications` capability. WordPress Administrators receive that capability automatically. Assign it to the appropriate chapter-administrator portal role through LAPDI Member Portal's existing per-role capability settings.
+The plugin adds **Users → CRM Classifications** for accounts with the `manage_btusa_contact_classifications` capability. WordPress Administrators receive that capability automatically. Do not grant this capability to chapter administrators; their chapter-site access is limited to Pages and Events.
 
 - Only users assigned to a configured Member Portal role are displayed.
 - An existing FluentCRM contact is required; the screen never creates one.

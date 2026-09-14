@@ -79,7 +79,7 @@ function FluentCrmApi( string $resource ) { global $btusa_newsletter_api; return
 require dirname( __DIR__ ) . '/btusa-contact-acquisition.php';
 
 $form = (object) array( 'id' => 5 );
-$data = array( 'first_name' => 'News', 'email' => 'news@example.org', 'marketing_consent' => array( 'yes' ) );
+$data = array( 'first_name' => 'News', 'email' => 'news@example.org', 'marketing_consent' => array( 'yes' ), 'chapter_code' => 'co' );
 BTUSA_Contact_Acquisition::process_submission( 12, $data, $form );
 
 if ( 1 !== $btusa_newsletter_api->updates || 'subscribed' !== $btusa_newsletter_api->last_data['status'] ) {
@@ -90,10 +90,24 @@ if ( array( 10 ) !== $btusa_newsletter_api->last_contact->attached_lists || arra
 	fwrite( STDERR, "Newsletter Prospect or welcome classification was not applied.\n" );
 	exit( 1 );
 }
+if ( 'co' !== ( $btusa_newsletter_api->last_data['custom_values']['btusa_chapter_interest'] ?? '' ) ) {
+	fwrite( STDERR, "Newsletter chapter interest was not retained.\n" );
+	exit( 1 );
+}
+
+$invalid_data                 = $data;
+$invalid_data['email']        = 'invalid-chapter@example.org';
+$invalid_data['chapter_code'] = 'a';
+$btusa_newsletter_api->existing = false;
+BTUSA_Contact_Acquisition::process_submission( 16, $invalid_data, $form );
+if ( isset( $btusa_newsletter_api->last_data['custom_values']['btusa_chapter_interest'] ) ) {
+	fwrite( STDERR, "Invalid newsletter chapter interest was retained.\n" );
+	exit( 1 );
+}
 
 $btusa_newsletter_options['_fluentform_double_optin_settings']['enabled'] = 'no';
 BTUSA_Contact_Acquisition::process_submission( 13, $data, $form );
-if ( 1 !== $btusa_newsletter_api->updates ) {
+if ( 2 !== $btusa_newsletter_api->updates ) {
 	fwrite( STDERR, "Newsletter routing did not fail closed without double opt-in.\n" );
 	exit( 1 );
 }

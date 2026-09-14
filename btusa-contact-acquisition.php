@@ -3,7 +3,7 @@
  * Plugin Name:       BTUSA Contact Acquisition
  * Plugin URI:        https://github.com/wearebtusa/btusa-contact-acquisition
  * Description:       Connects Better Together USA forms and portal users to FluentCRM with consent-safe lifecycle and restricted classification.
- * Version:           1.2.1
+ * Version:           1.3.0
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Requires Plugins:  fluentform, fluent-crm
@@ -17,7 +17,7 @@
 defined( 'ABSPATH' ) || exit;
 
 final class BTUSA_Contact_Acquisition {
-	public const VERSION = '1.2.1';
+	public const VERSION = '1.3.0';
 
 	public const VERSION_OPTION = 'btusa_contact_acquisition_version';
 
@@ -96,6 +96,10 @@ final class BTUSA_Contact_Acquisition {
 
 		if ( self::VERSION === (string) get_option( self::VERSION_OPTION, '' ) ) {
 			return;
+		}
+
+		if ( function_exists( 'FluentCrmApi' ) ) {
+			self::ensure_crm_resources();
 		}
 
 		update_option( self::VERSION_OPTION, self::VERSION, false );
@@ -300,6 +304,11 @@ final class BTUSA_Contact_Acquisition {
 				$data['first_name'] = $first_name;
 			}
 
+			$chapter_code = sanitize_key( self::field_value( $form_data, 'chapter_code' ) );
+			if ( preg_match( '/^[a-z0-9-]{2,32}$/', $chapter_code ) ) {
+				$data['custom_values']['btusa_chapter_interest'] = $chapter_code;
+			}
+
 			if ( ! $existing ) {
 				$data['source'] = 'Fluent Forms: BTUSA Newsletter Signup';
 				$data['status'] = 'subscribed';
@@ -489,6 +498,7 @@ final class BTUSA_Contact_Acquisition {
 			array( 'label' => 'BTUSA updates consent', 'slug' => 'btusa_updates_consent', 'type' => 'text', 'group' => 'default' ),
 			array( 'label' => 'BTUSA updates consent date', 'slug' => 'btusa_updates_consent_at', 'type' => 'date_time', 'group' => 'default' ),
 			array( 'label' => 'BTUSA updates consent source', 'slug' => 'btusa_updates_consent_source', 'type' => 'text', 'group' => 'default' ),
+			array( 'label' => 'Chapter news interest', 'slug' => 'btusa_chapter_interest', 'type' => 'text', 'group' => 'default' ),
 		);
 
 		foreach ( $needed as $field ) {

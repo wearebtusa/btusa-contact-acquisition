@@ -4,7 +4,7 @@ Tags: fluent-forms, fluentcrm, crm, consent, email-marketing
 Requires at least: 6.5
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -27,10 +27,17 @@ Fluent Forms and FluentCRM are required.
 
 == Upgrade Notice ==
 
+= 1.3.0 =
+Adds the Chapter news interest custom field during the normal plugin upgrade.
+
 = 1.0.0 =
 Replaces LAPDI Contact Acquisition. Existing LAPDI configuration options are copied to BTUSA option names on activation when needed.
 
 == Changelog ==
+
+= 1.3.0 =
+* Retain validated national-newsletter chapter interest in a dedicated FluentCRM custom field.
+* Document national-only form and CRM deployment; chapter sites link to national forms.
 
 = 1.2.1 =
 * Redesign CRM Classifications with a clearer two-step workflow, compact status badges and responsive controls.
